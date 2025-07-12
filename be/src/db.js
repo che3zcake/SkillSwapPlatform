@@ -54,7 +54,7 @@ const userSchema = new mongoose.Schema({
     status: {
         type: String,
         enum: ['Public', 'Private'],
-        default: 'Public'
+        default: 'Private'
     }
 })
 
@@ -96,8 +96,7 @@ const swapSchema = new mongoose.Schema({
     },
     targetUser: {
         type: mongoose.Schema.Types.ObjectId,
-        ref: 'User',
-        required: true
+        ref: 'User'
     },
     skills_offered: [{
         type: mongoose.Schema.Types.ObjectId,

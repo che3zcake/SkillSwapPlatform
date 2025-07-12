@@ -187,7 +187,6 @@ async function getExistingSkills(titles) {
 }
 
 const swapTriggerSchema = z.object({
-    targetUserId: z.string().min(1),
     skills_offered: z.array(z.string()).min(1),
     skill_wanted: z.array(z.string()).min(1),
 });
@@ -199,26 +198,21 @@ userRouter.post('/swap-trigger', authMiddleware, async (req, res) => {
             return res.status(400).json({ message: 'Invalid input', error: validation.error });
         }
 
-        const { targetUserId, skills_offered, skill_wanted } = validation.data;
+        const { skills_offered, skill_wanted } = validation.data;
 
-        const target = await User.findById(targetUserId);
-        if (!target) {
-            return res.status(404).json({ message: 'Target user not found' });
-        }
-
-        const skillsOfferedIds = await getExistingSkills(skills_offered);
-        const skillsWantedIds = await getExistingSkills(skill_wanted);
+        const skillsOfferedIds = await getOrCreateSkills(skills_offered);
+        const skillsWantedIds = await getOrCreateSkills(skill_wanted);
 
         const newSwap = await Swap.create({
             initiator: req.userId,
-            targetUser: targetUserId,
+            targetUser: null, // make it optional
             skills_offered: skillsOfferedIds,
             skill_wanted: skillsWantedIds,
             status: 'pending'
         });
 
         return res.status(201).json({
-            message: 'Swap request created successfully',
+            message: 'Swap broadcast created successfully',
             swap: newSwap
         });
 
@@ -269,35 +263,73 @@ userRouter.get('/swap', authMiddleware, async (req, res) => {
 
 userRouter.get('/swap/public', async (req, res) => {
     try {
-        const page = parseInt(req.query.page) || 1;
-        const limit = parseInt(req.query.limit) || 10;
-        const skip = (page - 1) * limit;
+        const ok = 'ok'
+        const swaps = await Swap.find({ targetUser: null }) // show broadcasted only
+            .populate('initiator', 'name')
+            .populate('skills_offered', 'title')
+            .populate('skill_wanted', 'title')
+            .sort({ createdAt: -1 });
 
-        const [swaps, total] = await Promise.all([
-            Swap.find()
-                .populate('initiator', 'name')
-                .populate('targetUser', 'name')
-                .populate('skills_offered', 'title')
-                .populate('skill_wanted', 'title')
-                .sort({ createdAt: -1 })
-                .skip(skip)
-                .limit(limit),
-            Swap.countDocuments()
-        ]);
+        res.status(200).json({ message: "Broadcasted swaps", swaps });
+    } catch (e) {
+        res.status(500).json({ message: "Failed to fetch", error: e.message });
+    }
+});
 
-        res.status(200).json({
-            message: "Public swaps",
-            swaps,
-            page,
-            totalPages: Math.ceil(total / limit),
-            totalSwaps: total
+userRouter.get('/swap-feed', async (req, res) => {
+    try {
+        const swaps = await Swap.find({ targetUser: null })
+            .populate('initiator', 'name')
+            .populate('skills_offered', 'title')
+            .populate('skill_wanted', 'title')
+            .sort({ createdAt: -1 });
+
+        res.status(200).json({ message: "Broadcast swaps", swaps });
+    } catch (e) {
+        res.status(500).json({ message: "Failed to fetch", error: e.message });
+    }
+});
+
+
+
+userRouter.post('/propose-swap', authMiddleware, async (req, res) => {
+    try {
+        const { originalSwapId } = req.body;
+
+        if (!originalSwapId) {
+            return res.status(400).json({ message: "Missing originalSwapId" });
+        }
+
+        const original = await Swap.findById(originalSwapId);
+        if (!original || !original.initiator) {
+            return res.status(404).json({ message: "Original swap not found or invalid" });
+        }
+
+        if (original.initiator.toString() === req.userId) {
+            return res.status(403).json({ message: "You cannot propose swap to yourself" });
+        }
+
+        const newSwap = await Swap.create({
+            initiator: req.userId,
+            targetUser: original.initiator,
+            skills_offered: original.skill_wanted,
+            skill_wanted: original.skills_offered,
+            status: 'pending',
+            proposedFrom: original._id
+        });
+
+        return res.status(201).json({
+            message: 'Swap proposed successfully',
+            swap: newSwap
         });
 
     } catch (e) {
-        console.error('Public Swaps Error:', e);
-        res.status(500).json({ message: "Failed to fetch public swaps", error: e.message });
+        console.error('Propose Swap Error:', e);
+        return res.status(500).json({ message: "Failed to propose swap", error: e.message });
     }
 });
+
+
 
 
 export default userRouter

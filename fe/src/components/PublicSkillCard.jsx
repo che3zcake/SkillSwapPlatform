@@ -1,6 +1,6 @@
 import axios from "axios";
 
-export default function SwapAdCard({ user }) {
+export default function SwapAdCard({ user, onSwapProposed }) {
     const handleProposeSwap = async () => {
         try {
             const token = localStorage.getItem("authorization");
@@ -8,9 +8,9 @@ export default function SwapAdCard({ user }) {
             const response = await axios.post(
                 `http://localhost:3000/api/v1/user/swap-trigger`,
                 {
-                    targetUserId: user._id, // This is the user we're proposing to
-                    skills_offered: user.skill_wanted.map(skill => skill.title), // We offer what they want
-                    skill_wanted: user.skills_offered.map(skill => skill.title)  // We want what they offer
+                    targetUserId: user._id,
+                    skills_offered: user.skill_wanted.map(skill => skill.title),
+                    skill_wanted: user.skills_offered.map(skill => skill.title)
                 },
                 {
                     headers: {
@@ -21,6 +21,11 @@ export default function SwapAdCard({ user }) {
 
             alert("Swap proposed successfully!");
             console.log(response.data);
+
+            // Remove the card from dashboard after proposing
+            if (onSwapProposed) {
+                onSwapProposed(user._id);
+            }
 
         } catch (error) {
             console.error("Swap proposal failed:", error);
